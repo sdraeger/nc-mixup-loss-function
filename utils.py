@@ -2,6 +2,8 @@ import torch
 import torch.nn as nn
 import matplotlib.pyplot as plt
 
+from mixup import mixup_data
+
 
 def get_color(y_a, y_b, lam, device, class_check=False):
     batch_size = y_a.size()[0]
@@ -62,3 +64,74 @@ def get_classifier_layer(model: nn.Module):
             return getattr(model, attr)
 
     return None
+
+
+def get_last_layer(
+    train_subset_loader,
+    net,
+    device,
+    num_classes,
+    distribution="uniform",
+    alph=1.0,
+    num_loops=1,
+):
+    """
+    Retrieves the last layer features of a neural network model.
+    Args:
+        train_subset_loader (torch.utils.data.DataLoader): The data loader for the training subset.
+        net (torch.nn.Module): The neural network model.
+        device (torch.device): The device to perform computations on.
+        distribution (str, optional): The distribution type for mixup data augmentation. Defaults to "uniform".
+        alph (float, optional): The alpha value for mixup data augmentation. Defaults to 1.0.
+        num_loops (int, optional): The number of loops to iterate over the training subset. Defaults to 1.
+    Returns:
+        torch.Tensor: The last layer features of the neural network model.
+        torch.Tensor: The color class check values.
+    """
+
+    print("Getting last layer features")
+
+    class features:
+        pass
+
+    def hook(self, input, output):
+        features.value = input[0].clone()
+
+    classifier = get_classifier_layer(net)
+    classifier.register_forward_hook(hook)
+    net.train()
+
+    count = 0
+    for i in range(num_loops):
+        with torch.no_grad():
+            for inputs, targets in train_subset_loader:
+                inputs, targets = inputs.to(device), targets.to(device)
+
+                inputs_mixed, targets_a, targets_b, lambda_ = mixup_data(
+                    inputs,
+                    targets,
+                    dist=distribution,
+                    alpha=alph,
+                    device=device,
+                    num_classes=num_classes,
+                )
+
+                color_class_check = get_color(
+                    targets_a, targets_b, lam=lambda_, class_check=True, use_cuda=True
+                )
+
+                _ = net(inputs_mixed)
+                h = features.value.data.view(inputs_mixed.shape[0], -1).detach()
+
+                if count == 0 and i == 0:
+                    H = h
+                    colors_class_check = color_class_check
+                    count += 1
+                else:
+                    H = torch.cat((H, h))
+                    colors_class_check = torch.cat(
+                        (colors_class_check, color_class_check)
+                    )
+                    count += 1
+
+    return H, colors_class_check

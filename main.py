@@ -1,7 +1,6 @@
 import torch
 import numpy as np
 import torch.optim as optim
-from torch.utils.data import Subset, DataLoader
 from tqdm import tqdm
 import click
 import polars as pl
@@ -16,7 +15,8 @@ from const import (
 )
 from mixup import mixup_data
 from loss import mixup_criterion
-from utils import get_color, plot_last_layer, get_classifier_layer
+from utils import plot_last_layer, get_last_layer
+from data import get_data
 
 
 def train(net, epoch, trainloader, criterion, device, optimizer, num_classes):
@@ -118,119 +118,6 @@ def test(net, epoch, testloader, criterion, device):
 
     acc = 100.0 * correct / total
     return test_loss / (batch_idx + 1), acc
-
-
-def get_last_layer(
-    train_subset_loader,
-    net,
-    device,
-    num_classes,
-    distribution="uniform",
-    alph=1.0,
-    num_loops=1,
-):
-    """
-    Retrieves the last layer features of a neural network model.
-    Args:
-        train_subset_loader (torch.utils.data.DataLoader): The data loader for the training subset.
-        net (torch.nn.Module): The neural network model.
-        device (torch.device): The device to perform computations on.
-        distribution (str, optional): The distribution type for mixup data augmentation. Defaults to "uniform".
-        alph (float, optional): The alpha value for mixup data augmentation. Defaults to 1.0.
-        num_loops (int, optional): The number of loops to iterate over the training subset. Defaults to 1.
-    Returns:
-        torch.Tensor: The last layer features of the neural network model.
-        torch.Tensor: The color class check values.
-    """
-
-    print("Getting last layer features")
-
-    class features:
-        pass
-
-    def hook(self, input, output):
-        features.value = input[0].clone()
-
-    classifier = get_classifier_layer(net)
-    classifier.register_forward_hook(hook)
-    net.train()
-
-    count = 0
-    for i in range(num_loops):
-        with torch.no_grad():
-            for inputs, targets in train_subset_loader:
-                inputs, targets = inputs.to(device), targets.to(device)
-
-                inputs_mixed, targets_a, targets_b, lambda_ = mixup_data(
-                    inputs,
-                    targets,
-                    dist=distribution,
-                    alpha=alph,
-                    device=device,
-                    num_classes=num_classes,
-                )
-
-                color_class_check = get_color(
-                    targets_a, targets_b, lam=lambda_, class_check=True, use_cuda=True
-                )
-
-                _ = net(inputs_mixed)
-                h = features.value.data.view(inputs_mixed.shape[0], -1).detach()
-
-                if count == 0 and i == 0:
-                    H = h
-                    colors_class_check = color_class_check
-                    count += 1
-                else:
-                    H = torch.cat((H, h))
-                    colors_class_check = torch.cat(
-                        (colors_class_check, color_class_check)
-                    )
-                    count += 1
-
-    return H, colors_class_check
-
-
-def get_data(dataset_cls, transform_train, transform_test):
-    """
-    Retrieves and prepares the data for training and testing.
-    Args:
-        dataset_cls (torchvision.datasets.Dataset): The dataset class to use.
-        transform_train (torchvision.transforms.Transform): The transformation to apply to the training data.
-        transform_test (torchvision.transforms.Transform): The transformation to apply to the testing data.
-    Returns:
-        dict: A dictionary containing the following keys:
-            - trainloader (torch.utils.data.DataLoader): The data loader for the training set.
-            - testloader (torch.utils.data.DataLoader): The data loader for the testing set.
-            - targets_subset (list): A list of randomly chosen target labels.
-            - train_subset_loader (torch.utils.data.DataLoader): The data loader for the subset of the training set.
-    """
-
-    trainset = dataset_cls(
-        "./data", train=True, download=True, transform=transform_train
-    )
-    trainloader = DataLoader(trainset, batch_size=128, shuffle=True)
-
-    testset = dataset_cls(
-        "./data", train=False, download=True, transform=transform_test
-    )
-    testloader = DataLoader(testset, batch_size=128, shuffle=False)
-
-    targets_subset = list(np.random.choice(10, 3, replace=False))
-    indices = [i for i, label in enumerate(trainset.targets) if label in targets_subset]
-
-    # Subset the data
-    dataset_subset = Subset(trainset, indices)
-    train_subset_loader = DataLoader(
-        dataset_subset, batch_size=128, shuffle=True, drop_last=True
-    )
-
-    return dict(
-        trainloader=trainloader,
-        testloader=testloader,
-        targets_subset=targets_subset,
-        train_subset_loader=train_subset_loader,
-    )
 
 
 @click.command()
