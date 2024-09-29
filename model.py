@@ -93,5 +93,5 @@ class Wide_ResNet(nn.Module):
         return out
 
 
-def wide_resnet_40x10():
-    return Wide_ResNet(40, 10, 0.0, 10)
+def wide_resnet_40x10(num_classes):
+    return Wide_ResNet(40, 10, 0.0, num_classes)

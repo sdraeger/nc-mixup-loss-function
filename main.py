@@ -4,19 +4,15 @@ import torchvision
 import numpy as np
 import torch.optim as optim
 import torchvision.transforms as transforms
+import torch.nn as nn
+from torch.utils.data import Subset, DataLoader
 from tqdm import tqdm
-from torch.utils.data import Subset
 import click
 
 from model import wide_resnet_40x10
 from mixup import mixup_data
 from loss import mixup_criterion
 from utils import get_color, plot_last_layer
-
-
-# Set seeds
-torch.manual_seed(0)
-torch.cuda.manual_seed(0)
 
 
 def train(net, epoch, trainloader, criterion, device, optimizer):
@@ -96,6 +92,14 @@ def test(net, epoch, testloader, criterion, device):
     return test_loss / (batch_idx + 1), acc
 
 
+def get_classifier_layer(model: nn.Module):
+    for attr in ["linear", "fc"]:
+        if hasattr(model, attr):
+            return getattr(model, attr)
+
+    return None
+
+
 def get_last_layer(
     train_subset_loader, net, device, distribution="uniform", alph=1.0, num_loops=1
 ):
@@ -107,7 +111,7 @@ def get_last_layer(
     def hook(self, input, output):
         features.value = input[0].clone()
 
-    classifier = net.linear
+    classifier = get_classifier_layer(net)
     classifier.register_forward_hook(hook)
     net.train()
 
@@ -143,7 +147,7 @@ def get_last_layer(
     return H, colours_class_check
 
 
-def get_data():
+def get_data(dataset_cls):
     transform_train = transforms.Compose(
         [
             transforms.RandomCrop(32, padding=4),
@@ -160,22 +164,22 @@ def get_data():
         ]
     )
 
-    trainset = torchvision.datasets.CIFAR10(
+    trainset = dataset_cls(
         "./data", train=True, download=True, transform=transform_train
     )
-    trainloader = torch.utils.data.DataLoader(trainset, batch_size=128, shuffle=True)
+    trainloader = DataLoader(trainset, batch_size=128, shuffle=True)
 
-    testset = torchvision.datasets.CIFAR10(
+    testset = dataset_cls(
         "./data", train=False, download=True, transform=transform_test
     )
-    testloader = torch.utils.data.DataLoader(testset, batch_size=128, shuffle=False)
+    testloader = DataLoader(testset, batch_size=128, shuffle=False)
 
     targets_subset = list(np.random.choice(10, 3, replace=False))
     indices = [i for i, label in enumerate(trainset.targets) if label in targets_subset]
 
     # Subset the data
     dataset_subset = Subset(trainset, indices)
-    train_subset_loader = torch.utils.data.DataLoader(
+    train_subset_loader = DataLoader(
         dataset_subset, batch_size=128, shuffle=True, drop_last=True
     )
 
@@ -189,14 +193,32 @@ def get_data():
 
 @click.command()
 @click.option("--device", default="cuda" if torch.cuda.is_available() else "cpu")
-def main(device):
+@click.option("--dataset", required=True)
+@click.option("--num_classes", required=True)
+@click.option("--model", required=True)
+@click.option("--seed", default=0)
+def main(device, dataset, num_classes, model, seed):
+    # Set seeds
+    np.random.seed(seed)
+    torch.manual_seed(seed)
+    torch.cuda.manual_seed(seed)
+
+    DATASETS = {
+        "cifar10": torchvision.datasets.CIFAR10,
+        "mnist": torchvision.datasets.MNIST,
+    }
+    MODELS = {
+        "wide_resnet_40x10": wide_resnet_40x10,
+        "wide_resnet_50x2": torchvision.models.wide_resnet50_2,
+    }
+
     learning_rate = 0.1
     weight_decay = 1e-4
-    num_classes = 10
     epochs = 500
     epochs_list = [0, 2, 4, 8, 16, 32, 64, 128, 200, 250, 300, 350, 400, 499]
 
-    net = wide_resnet_40x10()
+    net_cls = MODELS[model]
+    net = net_cls(num_classes=num_classes)
     net = net.to(device)
 
     optimizer = optim.SGD(
@@ -209,7 +231,8 @@ def main(device):
         gamma=0.1,
     )
 
-    data_dict = get_data()
+    dataset_cls = DATASETS[dataset]
+    data_dict = get_data(dataset_cls)
     trainloader = data_dict["trainloader"]
     testloader = data_dict["testloader"]
     targets_subset = data_dict["targets_subset"]
