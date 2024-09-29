@@ -1,4 +1,5 @@
 import torch
+import torch.nn as nn
 import matplotlib.pyplot as plt
 
 
@@ -25,7 +26,11 @@ def get_color(y_a, y_b, lam, use_cuda=True, class_check=False):
 
 
 def plot_last_layer(
-    features, classifier, colour, epoch, mixup=True, title=None, filename=None
+    features,
+    classifier,
+    colour,
+    epoch,
+    title=None,
 ):
     print("Generating plots for Epoch " + str(epoch))
 
@@ -51,6 +56,16 @@ def plot_last_layer(
 
     X = (A @ Q @ (H - mu_g).T).T.cpu().data.numpy()
 
-    plt.figure(figsize=(6, 6))
-    plt.scatter(X[:, 0], X[:, 1], c=colour, marker=".", s=2.5)
-    plt.title(title)
+    fig, ax = plt.subplots(figsize=(6, 6))
+    ax.scatter(X[:, 0], X[:, 1], c=colour, marker=".", s=2.5)
+    fig.title(title)
+
+    return fig, ax
+
+
+def get_classifier_layer(model: nn.Module):
+    for attr in ["linear", "fc"]:
+        if hasattr(model, attr):
+            return getattr(model, attr)
+
+    return None

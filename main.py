@@ -1,28 +1,50 @@
 import torch
-import torchvision
-
 import numpy as np
 import torch.optim as optim
-import torch.nn as nn
-import torchvision.transforms as transforms
 from torch.utils.data import Subset, DataLoader
 from tqdm import tqdm
 import click
+import polars as pl
 
-from model import wide_resnet_40x10
+from const import (
+    DATASETS,
+    NUM_CLASSES,
+    MODELS,
+    LOSSES,
+    TRANSFORMS_TRAIN,
+    TRANSFORMS_TEST,
+)
 from mixup import mixup_data
 from loss import mixup_criterion
-from utils import get_color, plot_last_layer
+from utils import get_color, plot_last_layer, get_classifier_layer
 
 
 def train(net, epoch, trainloader, criterion, device, optimizer):
+    """
+    Trains the neural network model for one epoch.
+
+    Args:
+        net (torch.nn.Module): The neural network model.
+        epoch (int): The current epoch number.
+        trainloader (torch.utils.data.DataLoader): The data loader for training data.
+        criterion (torch.nn.Module): The loss function.
+        device (torch.device): The device to perform computations on.
+        optimizer (torch.optim.Optimizer): The optimizer for updating model parameters.
+
+    Returns:
+        tuple: A tuple containing the average training loss and the accuracy of the model.
+    """
+
     pbar = tqdm(total=len(trainloader), position=0, leave=True)
 
-    print("\nEpoch: %d" % epoch)
+    print(f"\nEpoch: {epoch}")
+
     net.train()
+
     train_loss = 0
     correct = 0
     total = 0
+
     for batch_idx, (inputs, targets) in enumerate(trainloader):
         inputs, targets = inputs.to(device), targets.to(device)
         inputs, targets_a, targets_b, lambda_ = mixup_data(
@@ -40,30 +62,40 @@ def train(net, epoch, trainloader, criterion, device, optimizer):
         _, predicted = outputs.max(1)
         total += targets.size(0)
         correct += predicted.eq(targets).sum().item()
+
         pbar.update(1)
         pbar.set_description(
-            "Train\t\tEpoch: {} [{}/{} ({:.0f}%)] \t"
-            "Batch Loss: {:.6f} \t".format(
-                epoch,
-                batch_idx,
-                len(trainloader),
-                100.0 * batch_idx / len(trainloader),
-                loss.item(),
-            )
+            f"Train\t\tEpoch: {epoch} [{batch_idx}/{len(trainloader)} ({(100.0 * batch_idx / len(trainloader)):.0f}%)] \t"
+            f"Batch Loss: {loss.item():.6f} \t"
         )
 
     pbar.close()
 
-    return train_loss / (batch_idx + 1)
+    acc = 100.0 * correct / total
+    return train_loss / (batch_idx + 1), acc
 
 
 def test(net, epoch, testloader, criterion, device):
+    """
+    Evaluate the performance of a neural network model on a test dataset.
+    Args:
+        net (torch.nn.Module): The neural network model to be evaluated.
+        epoch (int): The current epoch number.
+        testloader (torch.utils.data.DataLoader): The data loader for the test dataset.
+        criterion (torch.nn.Module): The loss function used for evaluation.
+        device (torch.device): The device on which the evaluation will be performed.
+    Returns:
+        tuple: A tuple containing the average test loss and the accuracy of the model on the test dataset.
+    """
+
     pbar = tqdm(total=len(testloader), position=0, leave=True)
 
     net.eval()
+
     test_loss = 0
     correct = 0
     total = 0
+
     with torch.no_grad():
         for batch_idx, (inputs, targets) in enumerate(testloader):
             inputs, targets = inputs.to(device), targets.to(device)
@@ -77,34 +109,34 @@ def test(net, epoch, testloader, criterion, device):
 
             pbar.update(1)
             pbar.set_description(
-                "Test\t\tEpoch: {} [{}/{} ({:.0f}%)] \t"
-                "Batch Loss: {:.6f} \t"
-                "Batch Accuracy: {:.6f}".format(
-                    epoch,
-                    batch_idx,
-                    len(testloader),
-                    100.0 * batch_idx / len(testloader),
-                    loss.item(),
-                    100.0 * correct / total,
-                )
+                f"Test\t\tEpoch: {epoch} [{batch_idx}/{len(testloader)} ({(100.0 * batch_idx / len(testloader)):.0f}%)] \t"
+                f"Batch Loss: {loss.item():.6f} \t"
+                f"Batch Accuracy: {(100.0 * correct / total):.6f}"
             )
 
     pbar.close()
+
     acc = 100.0 * correct / total
     return test_loss / (batch_idx + 1), acc
-
-
-def get_classifier_layer(model: nn.Module):
-    for attr in ["linear", "fc"]:
-        if hasattr(model, attr):
-            return getattr(model, attr)
-
-    return None
 
 
 def get_last_layer(
     train_subset_loader, net, device, distribution="uniform", alph=1.0, num_loops=1
 ):
+    """
+    Retrieves the last layer features of a neural network model.
+    Args:
+        train_subset_loader (torch.utils.data.DataLoader): The data loader for the training subset.
+        net (torch.nn.Module): The neural network model.
+        device (torch.device): The device to perform computations on.
+        distribution (str, optional): The distribution type for mixup data augmentation. Defaults to "uniform".
+        alph (float, optional): The alpha value for mixup data augmentation. Defaults to 1.0.
+        num_loops (int, optional): The number of loops to iterate over the training subset. Defaults to 1.
+    Returns:
+        torch.Tensor: The last layer features of the neural network model.
+        torch.Tensor: The color class check values.
+    """
+
     print("Getting last layer features")
 
     class features:
@@ -149,22 +181,20 @@ def get_last_layer(
     return H, colours_class_check
 
 
-def get_data(dataset_cls):
-    transform_train = transforms.Compose(
-        [
-            transforms.RandomCrop(32, padding=4),
-            transforms.RandomHorizontalFlip(),
-            transforms.ToTensor(),
-            transforms.Normalize((0.4914, 0.4822, 0.4465), (0.2023, 0.1994, 0.2010)),
-        ]
-    )
-
-    transform_test = transforms.Compose(
-        [
-            transforms.ToTensor(),
-            transforms.Normalize((0.4914, 0.4822, 0.4465), (0.2023, 0.1994, 0.2010)),
-        ]
-    )
+def get_data(dataset_cls, transform_train, transform_test):
+    """
+    Retrieves and prepares the data for training and testing.
+    Args:
+        dataset_cls (torchvision.datasets.Dataset): The dataset class to use.
+        transform_train (torchvision.transforms.Transform): The transformation to apply to the training data.
+        transform_test (torchvision.transforms.Transform): The transformation to apply to the testing data.
+    Returns:
+        dict: A dictionary containing the following keys:
+            - trainloader (torch.utils.data.DataLoader): The data loader for the training set.
+            - testloader (torch.utils.data.DataLoader): The data loader for the testing set.
+            - targets_subset (list): A list of randomly chosen target labels.
+            - train_subset_loader (torch.utils.data.DataLoader): The data loader for the subset of the training set.
+    """
 
     trainset = dataset_cls(
         "./data", train=True, download=True, transform=transform_train
@@ -198,42 +228,20 @@ def get_data(dataset_cls):
 @click.option("--dataset", required=True)
 @click.option("--model", required=True)
 @click.option("--seed", default=0)
-@click.option("--loss_fun", default="cross_entropy")
+@click.option("--loss_fun", required=True)
 @click.option("--lr", default=0.1)
 @click.option("--weight_decay", default=1e-4)
 def main(device, dataset, model, seed, loss_fun, lr, weight_decay):
-    # Set seeds
+    # Set the seed for reproducibility
     np.random.seed(seed)
     torch.manual_seed(seed)
     torch.cuda.manual_seed(seed)
-
-    # Define choices for dataset, model, and loss function
-    DATASETS = {
-        "cifar10": torchvision.datasets.CIFAR10,
-        "mnist": torchvision.datasets.MNIST,
-        "fashionmnist": torchvision.datasets.FashionMNIST,
-    }
-    NUM_CLASSES = {
-        "cifar10": 10,
-        "mnist": 10,
-        "fashionmnist": 10,
-    }
-    MODELS = {
-        "wide_resnet_40x10": wide_resnet_40x10,
-        "wide_resnet_50x2": torchvision.models.wide_resnet50_2,
-        "resnet18": torchvision.models.resnet18,
-    }
-    LOSSES = {
-        "cross_entropy": nn.CrossEntropyLoss,
-        "mse": nn.MSELoss,
-        "mae": nn.L1Loss,
-        "smooth_l1": nn.SmoothL1Loss,
-    }
 
     num_classes = NUM_CLASSES[dataset]
     epochs = 500
     epochs_list = [0, 2, 4, 8, 16, 32, 64, 128, 200, 250, 300, 350, 400, 499]
 
+    # Define the model, optimizer, criterion, and scheduler
     net_cls = MODELS[model]
     net = net_cls(num_classes=num_classes)
     net = net.to(device)
@@ -242,36 +250,73 @@ def main(device, dataset, model, seed, loss_fun, lr, weight_decay):
         net.parameters(), lr=lr, momentum=0.9, weight_decay=weight_decay
     )
     criterion = LOSSES[loss_fun]()
-
     scheduler = optim.lr_scheduler.MultiStepLR(
         optimizer,
         milestones=[int(0.3 * epochs), int(0.5 * epochs), int(0.9 * epochs)],
         gamma=0.1,
     )
 
+    transform_train = TRANSFORMS_TRAIN[dataset]
+    transform_test = TRANSFORMS_TEST[dataset]
     dataset_cls = DATASETS[dataset]
-    data_dict = get_data(dataset_cls)
+    data_dict = get_data(dataset_cls, transform_train, transform_test)
     trainloader = data_dict["trainloader"]
     testloader = data_dict["testloader"]
     targets_subset = data_dict["targets_subset"]
 
-    # Train the model
-    for epoch in range(epochs):
-        train(net, epoch, trainloader, criterion, device, optimizer)
-        scheduler.step()
+    # Create a DataFrame to store metrics
+    metrics = pl.DataFrame(
+        {
+            "epoch": [],
+            "train_loss": [],
+            "test_loss": [],
+            "test_acc": [],
+        }
+    )
 
-        loss, acc = test(net, epoch, testloader, criterion, device)
+    try:
+        # Train the model
+        for epoch in range(epochs):
+            train_loss, train_acc = train(
+                net, epoch, trainloader, criterion, device, optimizer
+            )
+            test_loss, test_acc = test(net, epoch, testloader, criterion, device)
 
-        if epoch in epochs_list:
-            W = net.linear.weight[targets_subset].T.cpu().data.numpy()
-            H, colours_class = get_last_layer(num_loops=1)
+            metrics.vstack(
+                [
+                    pl.DataFrame(
+                        {
+                            "epoch": [epoch],
+                            "train_loss": [train_loss],
+                            "train_acc": [train_acc],
+                            "test_loss": [test_loss],
+                            "test_acc": [test_acc],
+                        }
+                    )
+                ],
+                in_place=True,
+            )
 
-            colours_class = colours_class.cpu().data.numpy()
-            H = H.cpu()
-            H = np.array(H)
+            scheduler.step()
 
-            plot_title = f"{dataset_cls.__name__} {net_cls.__name__} Epoch {epoch}"
-            plot_last_layer(H, W, colours_class, epoch, title=plot_title)
+            # If epoch is in the list of epochs to plot, get the last layer features and plot them
+            if epoch in epochs_list:
+                W = net.linear.weight[targets_subset].T.cpu().data.numpy()
+                H, colours_class = get_last_layer(num_loops=1)
+
+                colours_class = colours_class.cpu().data.numpy()
+                H = H.cpu()
+                H = np.array(H)
+
+                plot_title = f"{dataset_cls.__name__} {net_cls.__name__} Epoch {epoch}"
+                fig, _ = plot_last_layer(H, W, colours_class, epoch, title=plot_title)
+                fig.savefig(
+                    f"plots/{dataset}_{model}_{loss_fun}_epoch_{epoch}_seed_{seed}.png"
+                )
+    except KeyboardInterrupt:
+        print("\nCTRL+C detected. Saving metrics to CSV and exiting gracefully...")
+
+    metrics.write_csv(f"logs/{dataset}_{model}_{loss_fun}_seed_{seed}_metrics.csv")
 
 
 if __name__ == "__main__":
