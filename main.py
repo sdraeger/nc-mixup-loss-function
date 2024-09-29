@@ -19,7 +19,7 @@ from loss import mixup_criterion
 from utils import get_color, plot_last_layer, get_classifier_layer
 
 
-def train(net, epoch, trainloader, criterion, device, optimizer):
+def train(net, epoch, trainloader, criterion, device, optimizer, num_classes):
     """
     Trains the neural network model for one epoch.
 
@@ -48,7 +48,7 @@ def train(net, epoch, trainloader, criterion, device, optimizer):
     for batch_idx, (inputs, targets) in enumerate(trainloader):
         inputs, targets = inputs.to(device), targets.to(device)
         inputs, targets_a, targets_b, lambda_ = mixup_data(
-            inputs, targets, alpha=1.0, device=device
+            inputs, targets, alpha=1.0, device=device, num_classes=num_classes
         )
 
         outputs = net(inputs)
@@ -121,7 +121,13 @@ def test(net, epoch, testloader, criterion, device):
 
 
 def get_last_layer(
-    train_subset_loader, net, device, distribution="uniform", alph=1.0, num_loops=1
+    train_subset_loader,
+    net,
+    device,
+    num_classes,
+    distribution="uniform",
+    alph=1.0,
+    num_loops=1,
 ):
     """
     Retrieves the last layer features of a neural network model.
@@ -152,33 +158,37 @@ def get_last_layer(
     count = 0
     for i in range(num_loops):
         with torch.no_grad():
-            for batch_idx, (inputs, targets) in enumerate(train_subset_loader, start=1):
+            for inputs, targets in train_subset_loader:
                 inputs, targets = inputs.to(device), targets.to(device)
 
                 inputs_mixed, targets_a, targets_b, lambda_ = mixup_data(
-                    inputs, targets, dist=distribution, alpha=alph, use_cuda=True
+                    inputs,
+                    targets,
+                    dist=distribution,
+                    alpha=alph,
+                    device=device,
+                    num_classes=num_classes,
                 )
 
-                colour_class_check = get_color(
+                color_class_check = get_color(
                     targets_a, targets_b, lam=lambda_, class_check=True, use_cuda=True
                 )
 
-                outputs_mixed = net(inputs_mixed)
+                _ = net(inputs_mixed)
                 h = features.value.data.view(inputs_mixed.shape[0], -1).detach()
 
                 if count == 0 and i == 0:
                     H = h
-                    colours_class_check = colour_class_check
+                    colors_class_check = color_class_check
                     count += 1
-
                 else:
                     H = torch.cat((H, h))
-                    colours_class_check = torch.cat(
-                        (colours_class_check, colour_class_check)
+                    colors_class_check = torch.cat(
+                        (colors_class_check, color_class_check)
                     )
                     count += 1
 
-    return H, colours_class_check
+    return H, colors_class_check
 
 
 def get_data(dataset_cls, transform_train, transform_test):
@@ -302,14 +312,14 @@ def main(device, dataset, model, seed, loss_fun, lr, weight_decay):
             # If epoch is in the list of epochs to plot, get the last layer features and plot them
             if epoch in epochs_list:
                 W = net.linear.weight[targets_subset].T.cpu().data.numpy()
-                H, colours_class = get_last_layer(num_loops=1)
+                H, colors_class = get_last_layer(num_loops=1)
 
-                colours_class = colours_class.cpu().data.numpy()
+                colors_class = colors_class.cpu().data.numpy()
                 H = H.cpu()
                 H = np.array(H)
 
                 plot_title = f"{dataset_cls.__name__} {net_cls.__name__} Epoch {epoch}"
-                fig, _ = plot_last_layer(H, W, colours_class, epoch, title=plot_title)
+                fig, _ = plot_last_layer(H, W, colors_class, epoch, title=plot_title)
                 fig.savefig(
                     f"plots/{dataset}_{model}_{loss_fun}_epoch_{epoch}_seed_{seed}.png"
                 )

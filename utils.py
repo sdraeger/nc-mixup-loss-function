@@ -3,32 +3,25 @@ import torch.nn as nn
 import matplotlib.pyplot as plt
 
 
-def get_color(y_a, y_b, lam, use_cuda=True, class_check=False):
+def get_color(y_a, y_b, lam, device, class_check=False):
     batch_size = y_a.size()[0]
-
-    if use_cuda:
-        colours = torch.zeros((batch_size, 3)).cuda()
-    else:
-        colours = torch.zeros((batch_size, 3))
+    colors = torch.zeros((batch_size, 3)).to(device=device)
 
     for i in range(batch_size):
         if class_check:
-            if y_a[i] == y_b[i]:
-                colours[i][0] = 2 * abs(lam - 0.5)
-            else:
-                colours[i][2] = 2 * abs(lam - 0.5)
-
+            idx = 0 if y_a[i] == y_b[i] else 2
+            colors[i][idx] = 2 * abs(lam - 0.5)
         else:
-            colours[i][y_a[i]] += lam
-            colours[i][y_b[i]] += 1 - lam
+            colors[i][y_a[i]] += lam
+            colors[i][y_b[i]] += 1 - lam
 
-    return colours
+    return colors
 
 
 def plot_last_layer(
     features,
     classifier,
-    colour,
+    color,
     epoch,
     title=None,
 ):
@@ -57,7 +50,7 @@ def plot_last_layer(
     X = (A @ Q @ (H - mu_g).T).T.cpu().data.numpy()
 
     fig, ax = plt.subplots(figsize=(6, 6))
-    ax.scatter(X[:, 0], X[:, 1], c=colour, marker=".", s=2.5)
+    ax.scatter(X[:, 0], X[:, 1], c=color, marker=".", s=2.5)
     fig.title(title)
 
     return fig, ax

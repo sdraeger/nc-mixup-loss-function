@@ -5,12 +5,12 @@ import numpy as np
 def mixup_data(
     x,
     y,
+    device,
+    num_classes,
     dist="beta",
     lambda_=None,
     alpha=1.0,
     same_class=False,
-    num_classes=10,
-    device="cuda",
 ):
     """Compute the mixup data. Return mixed inputs, pairs of targets, and lambda"""
 
@@ -20,10 +20,7 @@ def mixup_data(
     # Pick distribution to sample lambda from.
     if lambda_ == None:
         if dist == "beta":
-            if alpha == 0:
-                lam = 0
-            elif alpha > 0:
-                lam = np.random.beta(alpha, alpha)
+            lam = 0 if alpha == 0 else np.random.beta(alpha, alpha)
         elif dist == "uniform":
             lam = np.random.uniform(0, 1)
     else:
