@@ -3,8 +3,8 @@ import torchvision
 
 import numpy as np
 import torch.optim as optim
-import torchvision.transforms as transforms
 import torch.nn as nn
+import torchvision.transforms as transforms
 from torch.utils.data import Subset, DataLoader
 from tqdm import tqdm
 import click
@@ -25,7 +25,9 @@ def train(net, epoch, trainloader, criterion, device, optimizer):
     total = 0
     for batch_idx, (inputs, targets) in enumerate(trainloader):
         inputs, targets = inputs.to(device), targets.to(device)
-        inputs, targets_a, targets_b, lambda_ = mixup_data(inputs, targets, alpha=1.0)
+        inputs, targets_a, targets_b, lambda_ = mixup_data(
+            inputs, targets, alpha=1.0, device=device
+        )
 
         outputs = net(inputs)
         loss_func = mixup_criterion(targets_a, targets_b, lambda_)
@@ -194,26 +196,41 @@ def get_data(dataset_cls):
 @click.command()
 @click.option("--device", default="cuda" if torch.cuda.is_available() else "cpu")
 @click.option("--dataset", required=True)
-@click.option("--num_classes", required=True)
 @click.option("--model", required=True)
 @click.option("--seed", default=0)
-def main(device, dataset, num_classes, model, seed):
+@click.option("--loss_fun", default="cross_entropy")
+@click.option("--lr", default=0.1)
+@click.option("--weight_decay", default=1e-4)
+def main(device, dataset, model, seed, loss_fun, lr, weight_decay):
     # Set seeds
     np.random.seed(seed)
     torch.manual_seed(seed)
     torch.cuda.manual_seed(seed)
 
+    # Define choices for dataset, model, and loss function
     DATASETS = {
         "cifar10": torchvision.datasets.CIFAR10,
         "mnist": torchvision.datasets.MNIST,
+        "fashionmnist": torchvision.datasets.FashionMNIST,
+    }
+    NUM_CLASSES = {
+        "cifar10": 10,
+        "mnist": 10,
+        "fashionmnist": 10,
     }
     MODELS = {
         "wide_resnet_40x10": wide_resnet_40x10,
         "wide_resnet_50x2": torchvision.models.wide_resnet50_2,
+        "resnet18": torchvision.models.resnet18,
+    }
+    LOSSES = {
+        "cross_entropy": nn.CrossEntropyLoss,
+        "mse": nn.MSELoss,
+        "mae": nn.L1Loss,
+        "smooth_l1": nn.SmoothL1Loss,
     }
 
-    learning_rate = 0.1
-    weight_decay = 1e-4
+    num_classes = NUM_CLASSES[dataset]
     epochs = 500
     epochs_list = [0, 2, 4, 8, 16, 32, 64, 128, 200, 250, 300, 350, 400, 499]
 
@@ -222,8 +239,9 @@ def main(device, dataset, num_classes, model, seed):
     net = net.to(device)
 
     optimizer = optim.SGD(
-        net.parameters(), lr=learning_rate, momentum=0.9, weight_decay=weight_decay
+        net.parameters(), lr=lr, momentum=0.9, weight_decay=weight_decay
     )
+    criterion = LOSSES[loss_fun]()
 
     scheduler = optim.lr_scheduler.MultiStepLR(
         optimizer,
@@ -237,11 +255,12 @@ def main(device, dataset, num_classes, model, seed):
     testloader = data_dict["testloader"]
     targets_subset = data_dict["targets_subset"]
 
-    for epoch in range(0, 500):
-        train(net, epoch, trainloader)
+    # Train the model
+    for epoch in range(epochs):
+        train(net, epoch, trainloader, criterion, device, optimizer)
         scheduler.step()
 
-        loss, acc = test(net, epoch, testloader)
+        loss, acc = test(net, epoch, testloader, criterion, device)
 
         if epoch in epochs_list:
             W = net.linear.weight[targets_subset].T.cpu().data.numpy()
@@ -251,9 +270,8 @@ def main(device, dataset, num_classes, model, seed):
             H = H.cpu()
             H = np.array(H)
 
-            plot_last_layer(
-                H, W, colours_class, epoch, title="CIFAR10 WRN40x10 Epoch " + str(epoch)
-            )
+            plot_title = f"{dataset_cls.__name__} {net_cls.__name__} Epoch {epoch}"
+            plot_last_layer(H, W, colours_class, epoch, title=plot_title)
 
 
 if __name__ == "__main__":

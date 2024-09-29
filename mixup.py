@@ -7,10 +7,10 @@ def mixup_data(
     y,
     dist="beta",
     lambda_=None,
-    use_cuda=True,
     alpha=1.0,
     same_class=False,
     num_classes=10,
+    device="cuda",
 ):
     """Compute the mixup data. Return mixed inputs, pairs of targets, and lambda"""
 
@@ -31,26 +31,15 @@ def mixup_data(
 
     # Check if same class mixup or regular mixup.
     if same_class:
-        if use_cuda:
-            index = torch.zeros(y.shape).long().cuda()
-            for i in range(num_classes):
-                mask = torch.nonzero(torch.where(y == i, True, False))
-                index[torch.flatten(mask)] = torch.flatten(
-                    mask[torch.randperm(mask.shape[0])]
-                )
-        else:
-            index = torch.zeros(y.shape).long().cuda()
-            for i in range(num_classes):
-                mask = torch.nonzero(torch.where(y == i, True, False))
-                index[torch.flatten(mask)] = torch.flatten(
-                    mask[torch.randperm(mask.shape[0])]
-                )
-
+        index = torch.zeros(y.shape).long().to(device=device)
+        for i in range(num_classes):
+            mask = torch.nonzero(torch.where(y == i, True, False))
+            index[torch.flatten(mask)] = torch.flatten(
+                mask[torch.randperm(mask.shape[0])]
+            )
     else:
-        if use_cuda:
-            index = torch.randperm(batch_size).cuda()
-        else:
-            index = torch.randperm(batch_size)
+        index = torch.randperm(batch_size).to(device=device)
+
     mixed_x = lam * x + (1 - lam) * x[index, :]
     y_a, y_b = y, y[index]
 
