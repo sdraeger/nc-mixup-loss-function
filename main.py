@@ -4,6 +4,7 @@ import torch.optim as optim
 from tqdm import tqdm
 import click
 import polars as pl
+from torchmetrics.classification import CalibrationError
 
 from const import (
     DATASETS,
@@ -45,6 +46,8 @@ def train(net, epoch, trainloader, criterion, device, optimizer, num_classes):
     correct = 0
     total = 0
 
+    ece = CalibrationError(task="multiclass", num_classes=num_classes)
+
     for batch_idx, (inputs, targets) in enumerate(trainloader):
         inputs, targets = inputs.to(device), targets.to(device)
         inputs, targets_a, targets_b, lambda_ = mixup_data(
@@ -58,6 +61,8 @@ def train(net, epoch, trainloader, criterion, device, optimizer, num_classes):
         optimizer.step()
         optimizer.zero_grad()
 
+        ece.update(outputs.softmax(dim=1), targets)
+
         train_loss += loss.item()
         _, predicted = outputs.max(1)
         total += targets.size(0)
@@ -67,15 +72,20 @@ def train(net, epoch, trainloader, criterion, device, optimizer, num_classes):
         pbar.set_description(
             f"Train\t\tEpoch: {epoch} [{batch_idx}/{len(trainloader)} ({(100.0 * batch_idx / len(trainloader)):.0f}%)] \t"
             f"Batch Loss: {loss.item():.6f} \t"
+            f"Batch Accuracy: {(100.0 * correct / total):.6f} \t"
+            f"Batch ECE: {ece.compute().item():.6f}"
         )
 
     pbar.close()
 
     acc = 100.0 * correct / total
-    return train_loss / (batch_idx + 1), acc
+    avg_loss = train_loss / (batch_idx + 1)
+    ece_value = ece.compute().item()
+
+    return dict(loss=avg_loss, accuracy=acc, ece=ece_value)
 
 
-def test(net, epoch, testloader, criterion, device):
+def test(net, epoch, testloader, criterion, device, num_classes):
     """
     Evaluate the performance of a neural network model on a test dataset.
     Args:
@@ -96,11 +106,15 @@ def test(net, epoch, testloader, criterion, device):
     correct = 0
     total = 0
 
+    ece = CalibrationError(task="multiclass", num_classes=num_classes)
+
     with torch.no_grad():
         for batch_idx, (inputs, targets) in enumerate(testloader):
             inputs, targets = inputs.to(device), targets.to(device)
             outputs = net(inputs)
             loss = criterion(outputs, targets)
+
+            ece.update(outputs.softmax(dim=1), targets.argmax(dim=1))
 
             test_loss += loss.item()
             _, predicted = outputs.max(1)
@@ -111,13 +125,16 @@ def test(net, epoch, testloader, criterion, device):
             pbar.set_description(
                 f"Test\t\tEpoch: {epoch} [{batch_idx}/{len(testloader)} ({(100.0 * batch_idx / len(testloader)):.0f}%)] \t"
                 f"Batch Loss: {loss.item():.6f} \t"
-                f"Batch Accuracy: {(100.0 * correct / total):.6f}"
+                f"Batch Accuracy: {(100.0 * correct / total):.6f} \t"
+                f"Batch ECE: {ece.compute().item():.6f}"
             )
 
     pbar.close()
 
     acc = 100.0 * correct / total
-    return test_loss / (batch_idx + 1), acc
+    avg_loss = test_loss / (batch_idx + 1)
+    ece_value = ece.compute().item()
+    return dict(loss=avg_loss, accuracy=acc, ece=ece_value)
 
 
 @click.command()
@@ -174,20 +191,20 @@ def main(device, dataset, model, seed, loss_fun, lr, weight_decay):
     try:
         # Train the model
         for epoch in range(epochs):
-            train_loss, train_acc = train(
-                net, epoch, trainloader, criterion, device, optimizer
+            train_dict = train(
+                net, epoch, trainloader, criterion, device, optimizer, num_classes
             )
-            test_loss, test_acc = test(net, epoch, testloader, criterion, device)
+            test_dict = test(net, epoch, testloader, criterion, device, num_classes)
 
             metrics.vstack(
                 [
                     pl.DataFrame(
                         {
                             "epoch": [epoch],
-                            "train_loss": [train_loss],
-                            "train_acc": [train_acc],
-                            "test_loss": [test_loss],
-                            "test_acc": [test_acc],
+                            "train_loss": [train_dict["loss"]],
+                            "train_acc": [train_dict["accuracy"]],
+                            "test_loss": [test_dict["loss"]],
+                            "test_acc": [test_dict["accuracy"]],
                         }
                     )
                 ],
