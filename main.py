@@ -49,6 +49,8 @@ def train(net, epoch, trainloader, criterion, device, optimizer, num_classes):
     ece = CalibrationError(task="multiclass", num_classes=num_classes)
 
     for batch_idx, (inputs, targets) in enumerate(trainloader):
+        progress = 100.0 * batch_idx / len(trainloader)
+
         inputs, targets = inputs.to(device), targets.to(device)
         inputs, targets_a, targets_b, lambda_ = mixup_data(
             inputs, targets, alpha=1.0, device=device, num_classes=num_classes
@@ -70,9 +72,9 @@ def train(net, epoch, trainloader, criterion, device, optimizer, num_classes):
 
         pbar.update(1)
         pbar.set_description(
-            f"Train\t\tEpoch: {epoch} [{batch_idx}/{len(trainloader)} ({(100.0 * batch_idx / len(trainloader)):.0f}%)] \t"
-            f"Batch Loss: {loss.item():.6f} \t"
-            f"Batch Accuracy: {(100.0 * correct / total):.6f} \t"
+            f"Train\t\tEpoch: {epoch} [{batch_idx}/{len(trainloader)} ({progress:.0f}%)]\t"
+            f"Batch Loss: {loss.item():.6f}\t"
+            f"Batch Accuracy: {(100.0 * correct / total):.6f}\t"
             f"Batch ECE: {ece.compute().item():.6f}"
         )
 
@@ -110,11 +112,13 @@ def test(net, epoch, testloader, criterion, device, num_classes):
 
     with torch.no_grad():
         for batch_idx, (inputs, targets) in enumerate(testloader):
+            progress = 100.0 * batch_idx / len(testloader)
+
             inputs, targets = inputs.to(device), targets.to(device)
             outputs = net(inputs)
             loss = criterion(outputs, targets)
 
-            ece.update(outputs.softmax(dim=1), targets.argmax(dim=1))
+            ece.update(outputs.softmax(dim=1), targets)
 
             test_loss += loss.item()
             _, predicted = outputs.max(1)
@@ -123,9 +127,9 @@ def test(net, epoch, testloader, criterion, device, num_classes):
 
             pbar.update(1)
             pbar.set_description(
-                f"Test\t\tEpoch: {epoch} [{batch_idx}/{len(testloader)} ({(100.0 * batch_idx / len(testloader)):.0f}%)] \t"
-                f"Batch Loss: {loss.item():.6f} \t"
-                f"Batch Accuracy: {(100.0 * correct / total):.6f} \t"
+                f"Test\t\tEpoch: {epoch} [{batch_idx}/{len(testloader)} ({progress:.0f}%)]\t"
+                f"Batch Loss: {loss.item():.6f}\t"
+                f"Batch Accuracy: {(100.0 * correct / total):.6f}\t"
                 f"Batch ECE: {ece.compute().item():.6f}"
             )
 
@@ -197,17 +201,15 @@ def main(device, dataset, model, seed, loss_fun, lr, weight_decay):
             test_dict = test(net, epoch, testloader, criterion, device, num_classes)
 
             metrics.vstack(
-                [
-                    pl.DataFrame(
-                        {
-                            "epoch": [epoch],
-                            "train_loss": [train_dict["loss"]],
-                            "train_acc": [train_dict["accuracy"]],
-                            "test_loss": [test_dict["loss"]],
-                            "test_acc": [test_dict["accuracy"]],
-                        }
-                    )
-                ],
+                pl.DataFrame(
+                    {
+                        "epoch": [epoch],
+                        "train_loss": [train_dict["loss"]],
+                        "train_acc": [train_dict["accuracy"]],
+                        "test_loss": [test_dict["loss"]],
+                        "test_acc": [test_dict["accuracy"]],
+                    }
+                ),
                 in_place=True,
             )
 
