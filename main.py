@@ -187,6 +187,7 @@ def main(device, dataset, model, seed, loss_fun, lr, weight_decay):
         {
             "epoch": [],
             "train_loss": [],
+            "train_acc": [],
             "test_loss": [],
             "test_acc": [],
         }
