@@ -53,7 +53,7 @@ def plot_last_layer(
 
     fig, ax = plt.subplots(figsize=(6, 6))
     ax.scatter(X[:, 0], X[:, 1], c=color, marker=".", s=2.5)
-    fig.title(title)
+    fig.suptitle(title)
 
     return fig, ax
 
@@ -117,7 +117,11 @@ def get_last_layer(
                 )
 
                 color_class_check = get_color(
-                    targets_a, targets_b, lam=lambda_, class_check=True, use_cuda=True
+                    targets_a,
+                    targets_b,
+                    lam=lambda_,
+                    device=device,
+                    class_check=True,
                 )
 
                 _ = net(inputs_mixed)

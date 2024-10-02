@@ -178,9 +178,12 @@ def main(device, dataset, model, seed, loss_fun, lr, weight_decay):
     transform_test = TRANSFORMS_TEST[dataset]
     dataset_cls = DATASETS[dataset]
     data_dict = get_data(dataset_cls, transform_train, transform_test)
+
     trainloader = data_dict["trainloader"]
     testloader = data_dict["testloader"]
+
     targets_subset = data_dict["targets_subset"]
+    train_subset_loader = data_dict["train_subset_loader"]
 
     # Create a DataFrame to store metrics
     metrics = pl.DataFrame(
@@ -201,17 +204,23 @@ def main(device, dataset, model, seed, loss_fun, lr, weight_decay):
             )
             test_dict = test(net, epoch, testloader, criterion, device, num_classes)
 
-            metrics.vstack(
-                pl.DataFrame(
-                    {
-                        "epoch": [epoch],
-                        "train_loss": [train_dict["loss"]],
-                        "train_acc": [train_dict["accuracy"]],
-                        "test_loss": [test_dict["loss"]],
-                        "test_acc": [test_dict["accuracy"]],
-                    }
-                ),
-                in_place=True,
+            metrics = pl.concat(
+                [
+                    metrics,
+                    pl.DataFrame(
+                        {
+                            "epoch": [epoch],
+                            "train_loss": [train_dict["loss"]],
+                            "train_acc": [train_dict["accuracy"]],
+                            "test_loss": [test_dict["loss"]],
+                            "test_acc": [test_dict["accuracy"]],
+                        }
+                    ),
+                ],
+                how="vertical_relaxed",
+            )
+            metrics.write_csv(
+                f"logs/{dataset}_{model}_{loss_fun}_seed_{seed}_metrics.csv"
             )
 
             scheduler.step()
@@ -219,7 +228,13 @@ def main(device, dataset, model, seed, loss_fun, lr, weight_decay):
             # If epoch is in the list of epochs to plot, get the last layer features and plot them
             if epoch in epochs_list:
                 W = net.linear.weight[targets_subset].T.cpu().data.numpy()
-                H, colors_class = get_last_layer(num_loops=1)
+                H, colors_class = get_last_layer(
+                    train_subset_loader=train_subset_loader,
+                    net=net,
+                    device=device,
+                    num_classes=num_classes,
+                    num_loops=1,
+                )
 
                 colors_class = colors_class.cpu().data.numpy()
                 H = H.cpu()
@@ -232,8 +247,6 @@ def main(device, dataset, model, seed, loss_fun, lr, weight_decay):
                 )
     except KeyboardInterrupt:
         print("\nCTRL+C detected. Saving metrics to CSV and exiting gracefully...")
-
-    metrics.write_csv(f"logs/{dataset}_{model}_{loss_fun}_seed_{seed}_metrics.csv")
 
 
 if __name__ == "__main__":
