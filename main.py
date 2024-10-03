@@ -20,7 +20,9 @@ from utils import plot_last_layer, get_last_layer
 from data import get_data
 
 
-def train(net, epoch, trainloader, criterion, device, optimizer, num_classes):
+def train(
+    net, epoch, trainloader, criterion, device, optimizer, num_classes, use_mixup=True
+):
     """
     Trains the neural network model for one epoch.
 
@@ -50,15 +52,19 @@ def train(net, epoch, trainloader, criterion, device, optimizer, num_classes):
 
     for batch_idx, (inputs, targets) in enumerate(trainloader):
         progress = 100.0 * batch_idx / len(trainloader)
-
         inputs, targets = inputs.to(device), targets.to(device)
-        inputs, targets_a, targets_b, lambda_ = mixup_data(
-            inputs, targets, alpha=1.0, device=device, num_classes=num_classes
-        )
 
         outputs = net(inputs)
-        loss_func = mixup_criterion(targets_a, targets_b, lambda_)
-        loss = loss_func(criterion, outputs)
+
+        if use_mixup:
+            inputs, targets_a, targets_b, lambda_ = mixup_data(
+                inputs, targets, alpha=1.0, device=device, num_classes=num_classes
+            )
+            loss_func = mixup_criterion(targets_a, targets_b, lambda_)
+
+        loss = (
+            loss_func(criterion, outputs) if use_mixup else criterion(outputs, targets)
+        )
         loss.backward()
         optimizer.step()
         optimizer.zero_grad()
@@ -149,7 +155,8 @@ def test(net, epoch, testloader, criterion, device, num_classes):
 @click.option("--loss_fun", required=True)
 @click.option("--lr", default=0.1)
 @click.option("--weight_decay", default=1e-4)
-def main(device, dataset, model, seed, loss_fun, lr, weight_decay):
+@click.option("--no_mixup", is_flag=True, default=False)
+def main(device, dataset, model, seed, loss_fun, lr, weight_decay, no_mixup):
     # Set the seed for reproducibility
     np.random.seed(seed)
     torch.manual_seed(seed)
@@ -200,7 +207,14 @@ def main(device, dataset, model, seed, loss_fun, lr, weight_decay):
         # Train the model
         for epoch in range(epochs):
             train_dict = train(
-                net, epoch, trainloader, criterion, device, optimizer, num_classes
+                net,
+                epoch,
+                trainloader,
+                criterion,
+                device,
+                optimizer,
+                num_classes,
+                use_mixup=not no_mixup,
             )
             test_dict = test(net, epoch, testloader, criterion, device, num_classes)
 
