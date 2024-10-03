@@ -2,7 +2,7 @@
 
 ## Introduction
 
-Neural collapse (NC; [[1]](#1)) is a phenomenon in deep learning that occurs when a neural network trained
+Neural collapse (NC; [[1]](#1)) is a phenomenon in deep learning that occurs when a neural network is trained
 for classification and toward overfitting the training dataset. Under NC, the features of the layer before
 the classification head exhibit the geometric structure of an Equiangular Tight Frame (ETF) and the decision
 rule of the network collapses to a nearest-neighbor decision where the penultimate layer's features are
