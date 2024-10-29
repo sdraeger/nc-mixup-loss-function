@@ -9,7 +9,7 @@ rule of the network collapses to a nearest-neighbor decision where the penultima
 compared to the mean of the training examples' features.
 
 Mixup [[3]](#3) is a data augmentation technique that works by creating a convex combination of two training
-examples. In addition to providing a way of regularizing the model, it yields a more calibrated moddel.
+examples. In addition to providing a way of regularizing the model, it yields a more calibrated model.
 Fisher et al. [[2]](#2) investigated how the success of Mixup could be explained by the prevalence of NC
 in different stages of training and under different loss functions. Despite these efforts, it remains open
 whether different loss functions exhibit different NC dynamics, as well as the impact of different network
