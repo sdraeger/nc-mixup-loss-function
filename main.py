@@ -1,7 +1,6 @@
 import torch
 import numpy as np
 import torch.optim as optim
-import torch.nn.functional as F
 from tqdm import tqdm
 import click
 import polars as pl
@@ -242,7 +241,7 @@ def main(
 
     try:
         # Train the model
-        for epoch in range(epochs):
+        for epoch in range(1, epochs + 1):
             train_dict = train(
                 net,
                 epoch,
@@ -276,11 +275,10 @@ def main(
 
             scheduler.step()
 
-            # If epoch is in the list of epochs to plot, get the last layer features and plot them
-            if epoch in epochs_list:
+            # If the 0-indexed epoch is in the list of epochs to plot, get the last layer features and plot them
+            if epoch - 1 in epochs_list:
                 fc_layer = get_classifier_layer(net)
                 W = fc_layer.weight[targets_subset].T.cpu().data.numpy()
-                # W = net.linear.weight[targets_subset].T.cpu().data.numpy()
                 H, colors_class = get_last_layer(
                     train_subset_loader=train_subset_loader,
                     net=net,
@@ -290,8 +288,7 @@ def main(
                 )
 
                 colors_class = colors_class.cpu().data.numpy()
-                H = H.cpu()
-                H = np.array(H)
+                H = H.cpu().numpy()
 
                 plot_title = f"{dataset_cls.__name__} {net_cls.__name__} Epoch {epoch}"
                 fig, _ = plot_last_layer(H, W, colors_class, epoch, title=plot_title)
