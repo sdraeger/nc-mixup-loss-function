@@ -18,7 +18,7 @@ def mixup_data(
     batch_size = x.size()[0]
 
     # Pick distribution to sample lambda from.
-    if lambda_ == None:
+    if lambda_ is None:
         if dist == "beta":
             lam = 0 if alpha == 0 else np.random.beta(alpha, alpha)
         elif dist == "uniform":

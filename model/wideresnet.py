@@ -46,7 +46,7 @@ class wide_basic(nn.Module):
 
 
 class Wide_ResNet(nn.Module):
-    def __init__(self, depth, widen_factor, dropout_rate, num_classes):
+    def __init__(self, depth, widen_factor, dropout_rate, num_channels, num_classes):
         super(Wide_ResNet, self).__init__()
         self.in_planes = 16
 
@@ -57,7 +57,7 @@ class Wide_ResNet(nn.Module):
         print("| Wide-Resnet %dx%d" % (depth, k))
         nStages = [16, 16 * k, 32 * k, 64 * k]
 
-        self.conv1 = conv3x3(3, nStages[0])
+        self.conv1 = conv3x3(num_channels, nStages[0])
         self.layer1 = self._wide_layer(
             wide_basic, nStages[1], n, dropout_rate, stride=1
         )
@@ -89,9 +89,12 @@ class Wide_ResNet(nn.Module):
         out = F.avg_pool2d(out, 8)
         out = out.view(out.size(0), -1)
         out = self.linear(out)
-
         return out
 
 
-def wide_resnet_40x10(num_classes):
-    return Wide_ResNet(40, 10, 0.0, num_classes)
+def wide_resnet_40x10(num_channels, num_classes):
+    return Wide_ResNet(40, 10, 0.0, num_channels, num_classes)
+
+
+def wide_resnet_50x2(num_channels, num_classes):
+    return Wide_ResNet(50, 2, 0.0, num_channels, num_classes)

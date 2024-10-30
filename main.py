@@ -1,6 +1,7 @@
 import torch
 import numpy as np
 import torch.optim as optim
+import torch.nn.functional as F
 from tqdm import tqdm
 import click
 import polars as pl
@@ -9,6 +10,7 @@ from torchmetrics.classification import CalibrationError
 from const import (
     DATASETS,
     NUM_CLASSES,
+    NUM_CHANNELS,
     MODELS,
     LOSSES,
     TRANSFORMS_TRAIN,
@@ -16,12 +18,19 @@ from const import (
 )
 from mixup import mixup_data
 from loss import mixup_criterion
-from utils import plot_last_layer, get_last_layer
+from utils import plot_last_layer, get_last_layer, get_classifier_layer
 from data import get_data
 
 
 def train(
-    net, epoch, trainloader, criterion, device, optimizer, num_classes, use_mixup=True
+    net,
+    epoch,
+    trainloader,
+    criterion,
+    device,
+    optimizer,
+    num_classes,
+    use_mixup=True,
 ):
     """
     Trains the neural network model for one epoch.
@@ -33,9 +42,11 @@ def train(
         criterion (torch.nn.Module): The loss function.
         device (torch.device): The device to perform computations on.
         optimizer (torch.optim.Optimizer): The optimizer for updating model parameters.
+        num_classes (int): The number of classes in the dataset.
+        use_mixup (bool): Whether to use mixup.
 
     Returns:
-        tuple: A tuple containing the average training loss and the accuracy of the model.
+        dict: A dictionary containing the average loss, accuracy, and ECE for the epoch
     """
 
     pbar = tqdm(total=len(trainloader), position=0, leave=True)
@@ -60,6 +71,16 @@ def train(
             inputs, targets_a, targets_b, lambda_ = mixup_data(
                 inputs, targets, alpha=1.0, device=device, num_classes=num_classes
             )
+
+            # if softmax:
+            #     targets_a, targets_b = F.one_hot(
+            #         targets_a, num_classes=num_classes
+            #     ), F.one_hot(targets_b, num_classes=num_classes)
+            #     targets_a, targets_b = (
+            #         targets_a.float(),
+            #         targets_b.float(),
+            #     )
+
             loss_func = mixup_criterion(targets_a, targets_b, lambda_)
 
         loss = (
@@ -148,33 +169,49 @@ def test(net, epoch, testloader, criterion, device, num_classes):
 
 
 @click.command()
-@click.option("--device", default="cuda" if torch.cuda.is_available() else "cpu")
-@click.option("--dataset", required=True)
-@click.option("--model", required=True)
+@click.option(
+    "--device",
+    default="cuda" if torch.cuda.is_available() else "cpu",
+)
+@click.option("--dataset", type=click.Choice(DATASETS.keys()), required=True)
+@click.option("--model", type=click.Choice(MODELS.keys()), required=True)
 @click.option("--seed", default=0)
-@click.option("--loss_fun", required=True)
+@click.option("--loss_fun", type=click.Choice(LOSSES.keys()), required=True)
 @click.option("--lr", default=0.1)
 @click.option("--weight_decay", default=1e-4)
 @click.option("--no_mixup", is_flag=True, default=False)
-def main(device, dataset, model, seed, loss_fun, lr, weight_decay, no_mixup):
+@click.option("--loss_kw", "-lkw", type=(str, float), multiple=True)
+def main(
+    device,
+    dataset,
+    model,
+    seed,
+    loss_fun,
+    lr,
+    weight_decay,
+    no_mixup,
+    loss_kw,
+):
     # Set the seed for reproducibility
     np.random.seed(seed)
     torch.manual_seed(seed)
     torch.cuda.manual_seed(seed)
 
     num_classes = NUM_CLASSES[dataset]
+    num_channels = NUM_CHANNELS[dataset]
+
     epochs = 500
     epochs_list = [0, 2, 4, 8, 16, 32, 64, 128, 200, 250, 300, 350, 400, 499]
 
     # Define the model, optimizer, criterion, and scheduler
     net_cls = MODELS[model]
-    net = net_cls(num_classes=num_classes)
+    net = net_cls(num_classes=num_classes, num_channels=num_channels)
     net = net.to(device)
 
     optimizer = optim.SGD(
         net.parameters(), lr=lr, momentum=0.9, weight_decay=weight_decay
     )
-    criterion = LOSSES[loss_fun]()
+    criterion = LOSSES[loss_fun](**dict(loss_kw))
     scheduler = optim.lr_scheduler.MultiStepLR(
         optimizer,
         milestones=[int(0.3 * epochs), int(0.5 * epochs), int(0.9 * epochs)],
@@ -241,7 +278,9 @@ def main(device, dataset, model, seed, loss_fun, lr, weight_decay, no_mixup):
 
             # If epoch is in the list of epochs to plot, get the last layer features and plot them
             if epoch in epochs_list:
-                W = net.linear.weight[targets_subset].T.cpu().data.numpy()
+                fc_layer = get_classifier_layer(net)
+                W = fc_layer.weight[targets_subset].T.cpu().data.numpy()
+                # W = net.linear.weight[targets_subset].T.cpu().data.numpy()
                 H, colors_class = get_last_layer(
                     train_subset_loader=train_subset_loader,
                     net=net,

@@ -2,7 +2,9 @@ import torchvision
 import torchvision.transforms as transforms
 import torch.nn as nn
 
-from model import wide_resnet_40x10
+from model.wideresnet import wide_resnet_40x10, wide_resnet_50x2
+from model.resnet import resnet18, resnet50
+from loss import ScaledMSELoss
 
 
 # Define choices for dataset, model, and loss function
@@ -18,10 +20,17 @@ NUM_CLASSES = {
     "fashionmnist": 10,
 }
 
+NUM_CHANNELS = {
+    "cifar10": 3,
+    "mnist": 1,
+    "fashionmnist": 1,
+}
+
 MODELS = {
     "wide_resnet_40x10": wide_resnet_40x10,
-    "wide_resnet_50x2": torchvision.models.wide_resnet50_2,
-    "resnet18": torchvision.models.resnet18,
+    "wide_resnet_50x2": wide_resnet_50x2,
+    "resnet18": resnet18,
+    "resnet50": resnet50,
 }
 
 LOSSES = {
@@ -29,6 +38,7 @@ LOSSES = {
     "mse": nn.MSELoss,
     "mae": nn.L1Loss,
     "smooth_l1": nn.SmoothL1Loss,
+    "scaled_mse": ScaledMSELoss,
 }
 
 TRANSFORMS_TRAIN = {
