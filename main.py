@@ -276,7 +276,8 @@ def main(
             scheduler.step()
 
             # If the 0-indexed epoch is in the list of epochs to plot, get the last layer features and plot them
-            if epoch - 1 in epochs_list:
+            ep = epoch - 1
+            if ep in epochs_list:
                 fc_layer = get_classifier_layer(net)
                 W = fc_layer.weight[targets_subset].T.cpu().data.numpy()
                 H, colors_class = get_last_layer(
@@ -290,10 +291,10 @@ def main(
                 colors_class = colors_class.cpu().data.numpy()
                 H = H.cpu().numpy()
 
-                plot_title = f"{dataset_cls.__name__} {net_cls.__name__} Epoch {epoch}"
-                fig, _ = plot_last_layer(H, W, colors_class, epoch, title=plot_title)
+                plot_title = f"{dataset_cls.__name__} {net_cls.__name__} Epoch {ep}"
+                fig, _ = plot_last_layer(H, W, colors_class, ep, title=plot_title)
                 fig.savefig(
-                    f"plots/{dataset}_{model}_{loss_fun}_epoch_{epoch}_seed_{seed}.png"
+                    f"plots/{dataset}_{model}_{loss_fun}_epoch_{ep}_seed_{seed}.png"
                 )
     except KeyboardInterrupt:
         print("\nCTRL+C detected. Saving metrics to CSV and exiting gracefully...")
