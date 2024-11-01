@@ -1,5 +1,6 @@
+import os.path as osp
+
 import torch
-import numpy as np
 import torch.optim as optim
 from tqdm import tqdm
 import click
@@ -17,7 +18,7 @@ from const import (
 )
 from mixup import mixup_data
 from loss import mixup_criterion
-from utils import plot_last_layer, get_last_layer, get_classifier_layer
+from utils import set_seed, plot_last_layer, get_last_layer, get_classifier_layer
 from data import get_data
 
 
@@ -192,9 +193,7 @@ def main(
     loss_kw,
 ):
     # Set the seed for reproducibility
-    np.random.seed(seed)
-    torch.manual_seed(seed)
-    torch.cuda.manual_seed(seed)
+    set_seed(seed)
 
     num_classes = NUM_CLASSES[dataset]
     num_channels = NUM_CHANNELS[dataset]
@@ -270,7 +269,9 @@ def main(
                 how="vertical_relaxed",
             )
             metrics.write_csv(
-                f"logs/{dataset}_{model}_{loss_fun}_seed_{seed}_metrics.csv"
+                osp.join(
+                    "logs", f"{dataset}_{model}_{loss_fun}_seed_{seed}_metrics.csv"
+                )
             )
 
             scheduler.step()
@@ -291,10 +292,15 @@ def main(
                 colors_class = colors_class.cpu().data.numpy()
                 H = H.cpu().numpy()
 
+                ## TODO: Save H, W, colors_class to disk
+
                 plot_title = f"{dataset_cls.__name__} {net_cls.__name__} Epoch {ep}"
                 fig, _ = plot_last_layer(H, W, colors_class, ep, title=plot_title)
                 fig.savefig(
-                    f"plots/{dataset}_{model}_{loss_fun}_epoch_{ep}_seed_{seed}.png"
+                    osp.join(
+                        "plots",
+                        f"{dataset}_{model}_{loss_fun}_epoch_{ep}_seed_{seed}.png",
+                    )
                 )
     except KeyboardInterrupt:
         print("\nCTRL+C detected. Saving metrics to CSV and exiting gracefully...")
