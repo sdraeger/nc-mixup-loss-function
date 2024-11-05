@@ -5,8 +5,16 @@ import numpy as np
 import torch
 import torch.nn as nn
 import matplotlib.pyplot as plt
+import dill
+import fire
 
 from mixup import mixup_data
+
+plt.rcParams.update(
+    {
+        "text.usetex": True,
+    }
+)
 
 
 def set_seed(seed):
@@ -73,6 +81,45 @@ def plot_last_layer(
     return fig, ax
 
 
+def plot_last_layer_cli(
+    pkl_dict_fname,
+    epoch,
+    out_filename,
+    title=None,
+):
+    with open(pkl_dict_fname, "rb") as f:
+        save_dict = dill.load(f)
+
+    features = save_dict["H"]
+    classifier = save_dict["W"]
+    color = save_dict["colors_class"]
+
+    fig, _ = plot_last_layer(features, classifier, color, epoch, title)
+    fig.savefig(out_filename)
+
+
+def get_save_dict_mean(*save_dict_list, out_fname):
+    H = []
+    W = []
+    colors_class = []
+
+    for save_dict_fname in save_dict_list:
+        with open(save_dict_fname, "rb") as f:
+            save_dict = dill.load(f)
+        H.append(save_dict["H"])
+        W.append(save_dict["W"])
+        colors_class.append(save_dict["colors_class"])
+
+    H = np.mean(np.array(H), axis=0)
+    W = np.mean(np.array(W), axis=0)
+    colors_class = np.mean(np.array(colors_class), axis=0)
+
+    mean_dict = {"H": H, "W": W, "colors_class": colors_class}
+
+    with open(out_fname, "wb") as f:
+        dill.dump(mean_dict, f)
+
+
 def get_classifier_layer(model: nn.Module):
     for attr in ["linear", "fc"]:
         if hasattr(model, attr):
@@ -103,8 +150,6 @@ def get_last_layer(
         torch.Tensor: The last layer features of the neural network model.
         torch.Tensor: The color class check values.
     """
-
-    print("Getting last layer features")
 
     class features:
         pass
@@ -154,3 +199,12 @@ def get_last_layer(
                     count += 1
 
     return H, colors_class_check
+
+
+if __name__ == "__main__":
+    fire.Fire(
+        {
+            "plot_last_layer": plot_last_layer_cli,
+            "get_save_dict_mean": get_save_dict_mean,
+        }
+    )

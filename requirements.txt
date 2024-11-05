@@ -5,3 +5,4 @@ click
 tqdm
 matplotlib
 polars
+dill

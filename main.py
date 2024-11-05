@@ -1,3 +1,4 @@
+import os
 import os.path as osp
 
 import torch
@@ -6,6 +7,7 @@ from tqdm import tqdm
 import click
 import polars as pl
 from torchmetrics.classification import CalibrationError
+import dill
 
 from const import (
     DATASETS,
@@ -71,16 +73,6 @@ def train(
             inputs, targets_a, targets_b, lambda_ = mixup_data(
                 inputs, targets, alpha=1.0, device=device, num_classes=num_classes
             )
-
-            # if softmax:
-            #     targets_a, targets_b = F.one_hot(
-            #         targets_a, num_classes=num_classes
-            #     ), F.one_hot(targets_b, num_classes=num_classes)
-            #     targets_a, targets_b = (
-            #         targets_a.float(),
-            #         targets_b.float(),
-            #     )
-
             loss_func = mixup_criterion(targets_a, targets_b, lambda_)
 
         loss = (
@@ -198,6 +190,8 @@ def main(
     num_classes = NUM_CLASSES[dataset]
     num_channels = NUM_CHANNELS[dataset]
 
+    log_subdir = f"{dataset}_{model}_{loss_fun}_seed_{seed}"
+
     epochs = 500
     epochs_list = [0, 2, 4, 8, 16, 32, 64, 128, 200, 250, 300, 350, 400, 499]
 
@@ -226,6 +220,9 @@ def main(
 
     targets_subset = data_dict["targets_subset"]
     train_subset_loader = data_dict["train_subset_loader"]
+
+    os.makedirs(osp.join("logs", log_subdir), exist_ok=True)
+    os.makedirs(osp.join("plots", log_subdir), exist_ok=True)
 
     # Create a DataFrame to store metrics
     metrics = pl.DataFrame(
@@ -268,17 +265,12 @@ def main(
                 ],
                 how="vertical_relaxed",
             )
-            metrics.write_csv(
-                osp.join(
-                    "logs", f"{dataset}_{model}_{loss_fun}_seed_{seed}_metrics.csv"
-                )
-            )
+            metrics.write_csv(osp.join("logs", log_subdir, "metrics.csv"))
 
             scheduler.step()
 
             # If the 0-indexed epoch is in the list of epochs to plot, get the last layer features and plot them
-            ep = epoch - 1
-            if ep in epochs_list:
+            if epoch - 1 in epochs_list:
                 fc_layer = get_classifier_layer(net)
                 W = fc_layer.weight[targets_subset].T.cpu().data.numpy()
                 H, colors_class = get_last_layer(
@@ -292,14 +284,25 @@ def main(
                 colors_class = colors_class.cpu().data.numpy()
                 H = H.cpu().numpy()
 
-                ## TODO: Save H, W, colors_class to disk
+                # Save H, W, colors_class to disk
+                save_dict = {
+                    "H": H,
+                    "W": W,
+                    "colors_class": colors_class,
+                }
+                with open(
+                    osp.join("logs", log_subdir, f"H_W_colors_class_epoch_{epoch}.pkl"),
+                    "wb",
+                ) as f:
+                    dill.dump(save_dict, f)
 
-                plot_title = f"{dataset_cls.__name__} {net_cls.__name__} Epoch {ep}"
-                fig, _ = plot_last_layer(H, W, colors_class, ep, title=plot_title)
+                plot_title = f"{dataset_cls.__name__} {net_cls.__name__} Epoch {epoch}"
+                fig, _ = plot_last_layer(H, W, colors_class, epoch, title=plot_title)
                 fig.savefig(
                     osp.join(
                         "plots",
-                        f"{dataset}_{model}_{loss_fun}_epoch_{ep}_seed_{seed}.png",
+                        log_subdir,
+                        f"last_layer_epoch_{epoch}.png",
                     )
                 )
     except KeyboardInterrupt:
