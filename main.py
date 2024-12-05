@@ -1,5 +1,6 @@
 import os
 import os.path as osp
+from contextlib import redirect_stderr
 
 import torch
 import torch.optim as optim
@@ -13,6 +14,7 @@ from const import (
     DATASETS,
     NUM_CLASSES,
     NUM_CHANNELS,
+    IMAGE_SIZES,
     MODELS,
     LOSSES,
     TRANSFORMS_TRAIN,
@@ -189,6 +191,7 @@ def main(
 
     num_classes = NUM_CLASSES[dataset]
     num_channels = NUM_CHANNELS[dataset]
+    image_size = IMAGE_SIZES[dataset]
 
     log_subdir = f"{dataset}_{model}_{loss_fun}_seed_{seed}"
 
@@ -197,7 +200,9 @@ def main(
 
     # Define the model, optimizer, criterion, and scheduler
     net_cls = MODELS[model]
-    net = net_cls(num_classes=num_classes, num_channels=num_channels)
+    net = net_cls(
+        num_classes=num_classes, num_channels=num_channels, image_size=image_size
+    )
     net = net.to(device)
 
     optimizer = optim.SGD(
@@ -235,78 +240,89 @@ def main(
         }
     )
 
-    try:
-        # Train the model
-        for epoch in range(1, epochs + 1):
-            train_dict = train(
-                net,
-                epoch,
-                trainloader,
-                criterion,
-                device,
-                optimizer,
-                num_classes,
-                use_mixup=not no_mixup,
-            )
-            test_dict = test(net, epoch, testloader, criterion, device, num_classes)
-
-            metrics = pl.concat(
-                [
-                    metrics,
-                    pl.DataFrame(
-                        {
-                            "epoch": [epoch],
-                            "train_loss": [train_dict["loss"]],
-                            "train_acc": [train_dict["accuracy"]],
-                            "test_loss": [test_dict["loss"]],
-                            "test_acc": [test_dict["accuracy"]],
-                        }
-                    ),
-                ],
-                how="vertical_relaxed",
-            )
-            metrics.write_csv(osp.join("logs", log_subdir, "metrics.csv"))
-
-            scheduler.step()
-
-            # If the 0-indexed epoch is in the list of epochs to plot, get the last layer features and plot them
-            if epoch - 1 in epochs_list:
-                fc_layer = get_classifier_layer(net)
-                W = fc_layer.weight[targets_subset].T.cpu().data.numpy()
-                H, colors_class = get_last_layer(
-                    train_subset_loader=train_subset_loader,
-                    net=net,
-                    device=device,
-                    num_classes=num_classes,
-                    num_loops=1,
+    with redirect_stderr(open(osp.join("logs", log_subdir, "train.log"), "w")):
+        try:
+            # Train the model
+            for epoch in range(1, epochs + 1):
+                train_dict = train(
+                    net,
+                    epoch,
+                    trainloader,
+                    criterion,
+                    device,
+                    optimizer,
+                    num_classes,
+                    use_mixup=not no_mixup,
                 )
+                test_dict = test(net, epoch, testloader, criterion, device, num_classes)
 
-                colors_class = colors_class.cpu().data.numpy()
-                H = H.cpu().numpy()
+                metrics = pl.concat(
+                    [
+                        metrics,
+                        pl.DataFrame(
+                            {
+                                "epoch": [epoch],
+                                "train_loss": [train_dict["loss"]],
+                                "train_acc": [train_dict["accuracy"]],
+                                "test_loss": [test_dict["loss"]],
+                                "test_acc": [test_dict["accuracy"]],
+                            }
+                        ),
+                    ],
+                    how="vertical_relaxed",
+                )
+                metrics.write_csv(osp.join("logs", log_subdir, "metrics.csv"))
 
-                # Save H, W, colors_class to disk
-                save_dict = {
-                    "H": H,
-                    "W": W,
-                    "colors_class": colors_class,
-                }
-                with open(
-                    osp.join("logs", log_subdir, f"H_W_colors_class_epoch_{epoch}.pkl"),
-                    "wb",
-                ) as f:
-                    dill.dump(save_dict, f)
+                scheduler.step()
 
-                plot_title = f"{dataset_cls.__name__} {net_cls.__name__} Epoch {epoch}"
-                fig, _ = plot_last_layer(H, W, colors_class, epoch, title=plot_title)
-                fig.savefig(
-                    osp.join(
-                        "plots",
-                        log_subdir,
-                        f"last_layer_epoch_{epoch}.png",
+                # If the 0-indexed epoch is in the list of epochs to plot, get the last layer features and plot them
+                if epoch - 1 in epochs_list:
+                    fc_layer = get_classifier_layer(net)
+                    W = fc_layer.weight[targets_subset].T.cpu().data.numpy()
+                    H, colors_class = get_last_layer(
+                        train_subset_loader=train_subset_loader,
+                        net=net,
+                        device=device,
+                        num_classes=num_classes,
+                        num_loops=1,
                     )
-                )
-    except KeyboardInterrupt:
-        print("\nCTRL+C detected. Saving metrics to CSV and exiting gracefully...")
+
+                    colors_class = colors_class.cpu().data.numpy()
+                    H = H.cpu().numpy()
+
+                    # Save H, W, colors_class to disk
+                    save_dict = {
+                        "H": H,
+                        "W": W,
+                        "colors_class": colors_class,
+                    }
+                    with open(
+                        osp.join(
+                            "logs", log_subdir, f"H_W_colors_class_epoch_{epoch}.pkl"
+                        ),
+                        "wb",
+                    ) as f:
+                        dill.dump(save_dict, f)
+
+                    plot_title = (
+                        f"{dataset_cls.__name__} {net_cls.__name__} Epoch {epoch}"
+                    )
+
+                    try:
+                        fig, _ = plot_last_layer(
+                            H, W, colors_class, epoch, title=plot_title
+                        )
+                        fig.savefig(
+                            osp.join(
+                                "plots",
+                                log_subdir,
+                                f"last_layer_epoch_{epoch}.png",
+                            )
+                        )
+                    except:
+                        pass
+        except KeyboardInterrupt:
+            print("\nCTRL+C detected. Saving metrics to CSV and exiting gracefully...")
 
 
 if __name__ == "__main__":

@@ -160,17 +160,17 @@ class ResNet(nn.Module):
         return nn.Sequential(*layers)
 
 
-def resnet18(num_classes, num_channels):
+def resnet18(num_classes, num_channels, **kwargs):
     return ResNet(Block, [2, 2, 2, 2], num_classes, num_channels)
 
 
-def resnet50(num_classes, num_channels):
+def resnet50(num_classes, num_channels, **kwargs):
     return ResNet(Bottleneck, [3, 4, 6, 3], num_classes, num_channels)
 
 
-def resnet101(num_classes, num_channels):
+def resnet101(num_classes, num_channels, **kwargs):
     return ResNet(Bottleneck, [3, 4, 23, 3], num_classes, num_channels)
 
 
-def resnet152(num_classes, num_channels):
+def resnet152(num_classes, num_channels, **kwargs):
     return ResNet(Bottleneck, [3, 8, 36, 3], num_classes, num_channels)

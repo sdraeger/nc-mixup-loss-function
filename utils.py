@@ -10,11 +10,13 @@ import fire
 
 from mixup import mixup_data
 
-plt.rcParams.update(
-    {
-        "text.usetex": True,
-    }
-)
+
+def usetex(tex: bool = True):
+    plt.rcParams.update(
+        {
+            "text.usetex": tex,
+        }
+    )
 
 
 def set_seed(seed):
@@ -121,9 +123,12 @@ def get_save_dict_mean(*save_dict_list, out_fname):
 
 
 def get_classifier_layer(model: nn.Module):
-    for attr in ["linear", "fc"]:
+    for attr in ["linear", "fc", "heads"]:
         if hasattr(model, attr):
-            return getattr(model, attr)
+            if attr == "heads":
+                return model.heads.head
+            else:
+                return getattr(model, attr)
 
     return None
 
@@ -201,10 +206,27 @@ def get_last_layer(
     return H, colors_class_check
 
 
+class Selector:
+    def usetex(self, tex: bool = True):
+        usetex(tex)
+
+    def plot_last_layer(
+        self,
+        pkl_dict_fname,
+        epoch,
+        out_filename,
+        title=None,
+    ):
+        return plot_last_layer_cli(
+            pkl_dict_fname,
+            epoch,
+            out_filename,
+            title=title,
+        )
+
+    def get_save_dict_mean(self, *save_dict_list, out_fname):
+        return get_save_dict_mean(*save_dict_list, out_fname=out_fname)
+
+
 if __name__ == "__main__":
-    fire.Fire(
-        {
-            "plot_last_layer": plot_last_layer_cli,
-            "get_save_dict_mean": get_save_dict_mean,
-        }
-    )
+    fire.Fire(Selector)

@@ -21,7 +21,7 @@ class FocalLoss(nn.Module):
             input = input.contiguous().view(-1, input.size(2))  # N,H*W,C => N*H*W,C
         target = target.view(-1, 1)
 
-        logpt = F.log_softmax(input)
+        logpt = F.log_softmax(input, dim=-1)
         logpt = logpt.gather(1, target)
         logpt = logpt.view(-1)
         pt = logpt.exp()
@@ -31,6 +31,21 @@ class FocalLoss(nn.Module):
             return loss.mean()
         else:
             return loss.sum()
+
+
+class ScaledL1Loss(nn.L1Loss):
+    """Scaled L1 Loss"""
+
+    def __init__(self, *args, kappa: float = 1.0, gamma: float = 1.0, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.kappa = kappa
+        self.gamma = gamma
+
+    def forward(self, ypred, y):
+        return F.l1_loss(
+            ypred,
+            self.kappa * F.one_hot(y, num_classes=ypred.size(1)).float(),
+        )
 
 
 class ScaledMSELoss(nn.MSELoss):

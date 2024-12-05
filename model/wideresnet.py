@@ -92,9 +92,9 @@ class Wide_ResNet(nn.Module):
         return out
 
 
-def wide_resnet_40x10(num_channels, num_classes):
+def wide_resnet_40x10(num_channels, num_classes, **kwargs):
     return Wide_ResNet(40, 10, 0.0, num_channels, num_classes)
 
 
-def wide_resnet_50x2(num_channels, num_classes):
+def wide_resnet_50x2(num_channels, num_classes, **kwargs):
     return Wide_ResNet(50, 2, 0.0, num_channels, num_classes)
