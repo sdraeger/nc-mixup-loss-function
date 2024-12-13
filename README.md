@@ -31,6 +31,20 @@ To install the necessary dependencies, run the following command:
 pip install -r requirements.txt
 ```
 
+## Usage
+
+To train a model, run the following command:
+```bash
+python main.py --dataset cifar10 --model resnet18 --loss cross_entropy --epochs 500
+```
+where arguments such as `dataset`, `model`, `loss`, and `epochs` are variable. For a full list of
+available arguments, refer to `main.py`.
+
+To plot the last-layer representations and loss curves from a pkl file, run the following command:
+```bash
+python utils.py <command_type> ...
+```
+
 ## References
 
 <a id="1">[1]</a>
