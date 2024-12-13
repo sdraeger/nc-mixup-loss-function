@@ -1,4 +1,4 @@
-# Pushing Boundaries even Further: Mixup's Influence on Neural Collapse
+# Neural Collapse under Mixup: A Closer Look at the Loss Function
 
 ## Introduction
 
