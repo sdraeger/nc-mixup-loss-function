@@ -4,6 +4,7 @@ torchmetrics
 click
 tqdm
 matplotlib
+seaborn
 polars
 dill
 vit-pytorch

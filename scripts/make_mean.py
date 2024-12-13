@@ -85,5 +85,44 @@ def save_dict_mean(logdir, nseed=3):
                 dill.dump(mean_dict, f)
 
 
+def save_csv_mean(logdir, nseed=3):
+    if not isinstance(logdir, Path):
+        logdir = Path(logdir)
+
+    grouped = group_by_seed(logdir)
+    for common_name, dirs in grouped.items():
+        if len(dirs) != nseed:
+            print(f"Skipping {common_name} because it does not have {nseed} seeds")
+            continue
+
+        csv_fnames = [f.name for f in (logdir / dirs[0]).rglob("*.csv")]
+
+        try:
+            os.makedirs(logdir / common_name)
+        except os.error:
+            pass
+
+        for csv_fname in csv_fnames:
+            if not isinstance(csv_fname, Path):
+                csv_fname = Path(csv_fname)
+            dataframes = []
+
+            for d in dirs:
+                print(osp.join(logdir, d, csv_fname))
+                try:
+                    df = pl.read_csv(osp.join(logdir, d, csv_fname))
+                    dataframes.append(df)
+                except:
+                    pass
+
+            mean_df = pl.concat(dataframes).group_by("epoch").mean()
+            mean_df = mean_df.with_columns(
+                pl.Series(name="epoch", values=range(1, len(mean_df) + 1))
+            )
+            mean_df.write_csv(
+                osp.join(logdir, common_name, f"{csv_fname.stem}_mean.csv"),
+            )
+
+
 if __name__ == "__main__":
-    fire.Fire(save_dict_mean)
+    fire.Fire({"pkl": save_dict_mean, "csv": save_csv_mean})
