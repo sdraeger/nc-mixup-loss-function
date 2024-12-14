@@ -56,20 +56,6 @@ class ScaledMSELoss(nn.MSELoss):
         self.kappa = kappa
         self.gamma = gamma
 
-    # def forward(self, ypred, y):
-    #     idx_y = y
-    #     y = F.one_hot(y, num_classes=ypred.size(1)).type(torch.float32)
-
-    #     kappa_sqrt = torch.sqrt(self.kappa * torch.tensor(1))
-
-    #     y_hat = ypred.clone()
-    #     y_gt = y.clone()
-
-    #     y_hat[torch.arange(y_hat.size(0)), idx_y] *= kappa_sqrt
-    #     y_gt[torch.arange(y_gt.size(0)), idx_y] = self.gamma * kappa_sqrt
-
-    #     return super().forward(ypred, y)
-
     def forward(self, ypred, y):
         return F.mse_loss(
             ypred,
